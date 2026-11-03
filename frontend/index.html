@@ -1,0 +1,140 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Secure Notes</title></head>
+<body>
+<h2>Secure Notes</h2>
+
+<section id="auth">
+  <input id="name" placeholder="name (register)">
+  <input id="email" placeholder="email">
+  <input id="password" type="password" placeholder="password">
+  <input id="interests" placeholder="interests: chess, reading (register)">
+  <button onclick="register()">Register</button>
+  <button onclick="login()">Login</button>
+</section>
+
+<section id="app" hidden>
+  <p>Logged in as <b id="who"></b> <button onclick="logout()">Logout</button></p>
+
+  <h3>My notes</h3>
+  <input id="nTitle" placeholder="title"> <input id="nContent" placeholder="content">
+  <button onclick="createNote()">Add note</button>
+  <ul id="notes"></ul>
+  <button onclick="loadNotes(true)" id="moreNotes" hidden>Load more</button>
+
+  <h3>Posts</h3>
+  <input id="pTitle" placeholder="title"> <input id="pContent" placeholder="content">
+  <button onclick="createPost()">Add post</button><br>
+  <input id="postUser" placeholder="user id">
+  <button onclick="show('/posts/user/' + v('postUser'))">View this user's posts</button>
+
+  <section id="admin" hidden>
+    <h3>Admin</h3>
+    <input id="adminCursor" placeholder="cursor (optional)">
+    <input id="interestFilter" placeholder="interest (optional)">
+    <button onclick="show('/admin/users')">All users</button>
+    <button onclick="show('/admin/notes')">All notes</button>
+    <button onclick="show('/admin/users-by-interest')">Users by interest</button>
+    <br>
+    <button onclick="addUser()">Add user</button>
+    <button onclick="removeUser()">Remove user</button>
+  </section>
+
+  <h3>Result</h3>
+  <pre id="out"></pre>
+</section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const v = (id) => $(id).value.trim();
+let token = localStorage.getItem('token');
+let me = JSON.parse(localStorage.getItem('me') || 'null');
+let notesCursor = null;
+
+async function api(path, method = 'GET', body) {
+  const res = await fetch('/api' + path, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: 'Bearer ' + token }) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && token) logout();
+  if (!res.ok) { alert(data.message || 'Error ' + res.status); throw new Error(data.message); }
+  return data;
+}
+
+function render() {
+  $('auth').hidden = !!token;
+  $('app').hidden = !token;
+  if (token) {
+    $('who').textContent = me.name + ' (' + me.role + ')';
+    $('admin').hidden = me.role !== 'admin';
+    loadNotes(false);
+  }
+}
+
+async function authCall(path, body) {
+  const d = await api(path, 'POST', body);
+  token = d.token; me = d.user;
+  localStorage.setItem('token', token);
+  localStorage.setItem('me', JSON.stringify(me));
+  render();
+}
+const register = () => authCall('/auth/register', {
+  name: v('name'), email: v('email'), password: v('password'),
+  interests: v('interests').split(',').map((s) => s.trim()).filter(Boolean),
+});
+const login = () => authCall('/auth/login', { email: v('email'), password: v('password') });
+function logout() { token = null; me = null; localStorage.clear(); render(); }
+
+async function loadNotes(more) {
+  if (!more) { notesCursor = null; $('notes').innerHTML = ''; }
+  const d = await api('/notes?limit=5' + (notesCursor ? '&cursor=' + notesCursor : ''));
+  d.items.forEach((n) => {
+    const li = document.createElement('li');
+    li.textContent = n.title + ' | ' + n.content + ' ';
+    const edit = document.createElement('button');
+    edit.textContent = 'Edit';
+    edit.onclick = async () => {
+      const title = prompt('New title', n.title);
+      if (title) { await api('/notes/' + n._id, 'PUT', { title }); loadNotes(false); }
+    };
+    const del = document.createElement('button');
+    del.textContent = 'Delete';
+    del.onclick = async () => { await api('/notes/' + n._id, 'DELETE'); loadNotes(false); };
+    li.append(edit, del);
+    $('notes').append(li);
+  });
+  notesCursor = d.nextCursor;
+  $('moreNotes').hidden = !notesCursor;
+}
+async function createNote() {
+  await api('/notes', 'POST', { title: v('nTitle'), content: v('nContent') });
+  loadNotes(false);
+}
+async function createPost() {
+  const p = await api('/posts', 'POST', { title: v('pTitle'), content: v('pContent') });
+  $('out').textContent = JSON.stringify(p, null, 2);
+}
+
+async function show(path) {
+  const params = [];
+  if (path.startsWith('/admin') && v('adminCursor')) params.push('cursor=' + encodeURIComponent(v('adminCursor')));
+  if (path.includes('users-by-interest') && v('interestFilter')) params.push('interest=' + encodeURIComponent(v('interestFilter')));
+  const d = await api(path + (params.length ? '?' + params.join('&') : ''));
+  $('out').textContent = JSON.stringify(d, null, 2);
+}
+async function addUser() {
+  const name = prompt('Name'), email = prompt('Email'), password = prompt('Password (8+ chars)');
+  const role = prompt('Role: user or admin', 'user');
+  if (name && email && password) await api('/admin/users', 'POST', { name, email, password, role });
+  show('/admin/users');
+}
+async function removeUser() {
+  const id = prompt('User id to delete');
+  if (id) { await api('/admin/users/' + id, 'DELETE'); show('/admin/users'); }
+}
+render();
+</script>
+</body>
+</html>
