@@ -7,6 +7,7 @@ import adminRoutes from './src/routes/adminRoutes.js';
 import postRoutes from './src/routes/postRoutes.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import cors from 'cors';
 import dns from 'node:dns';
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 
@@ -17,6 +18,7 @@ const app = express();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.use(express.static(path.join(__dirname, '../frontend')));
 
+app.use(cors({ origin: process.env.FRONTEND_URL }));
 app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/notes', noteRoutes);

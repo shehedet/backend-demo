@@ -52,7 +52,11 @@ let me = JSON.parse(localStorage.getItem('me') || 'null');
 let notesCursor = null;
 
 async function api(path, method = 'GET', body) {
-  const res = await fetch('/api' + path, {
+  const API = location.hostname === 'localhost'
+    ? '/api'
+    : 'https://backend-demo-bte4.onrender.com';
+
+  const res = await fetch(API + path, {
     method,
     headers: { 'Content-Type': 'application/json', ...(token && { Authorization: 'Bearer ' + token }) },
     body: body ? JSON.stringify(body) : undefined,
